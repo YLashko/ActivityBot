@@ -56,6 +56,12 @@ def get_user(telegram_id: str):
         where users.telegram_id = {telegram_id}
     '''
 
+def delete_user_by_telegram_name(name):
+    return f'''
+        DELETE from users
+        where users.telegram_nickname = {name}
+    '''
+
 def get_all_users():
     return '''
         select users.telegram_id, users.telegram_nickname, users.sent_message_date

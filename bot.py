@@ -18,6 +18,7 @@ bot = AsyncTeleBot(token=TOKEN, state_storage=StateMemoryStorage())
 
 class BotStates(StatesGroup):
     recording_activity = State
+    deleting_user = State
 
 @bot.message_handler(commands=['start', 'help'])
 async def help(message):
@@ -33,6 +34,14 @@ async def reset_tables_message(message):
         return
     database.execute_list(reset_tables())
     await send_message_to_user(user.id, 'База данных очищена')
+
+@bot.message_handler(commands=['deleteuser'])
+async def delete_user(message):
+    user = message.from_user
+    if not database.is_admin(user.id):
+        return
+    await bot.set_state(user.id, BotStates.deleting_user, user.id)
+    await send_message_to_user(user.id, "Выберите пользователя. Отмена - /cancel")
 
 @bot.message_handler(commands=['activity'])
 async def activity_message(message):
@@ -56,6 +65,25 @@ async def cancel_activity_recording_message(message):
     user = message.from_user
     await cancel_activity_recording(user.id)
     await send_message_to_user(user.id, "Запись отменена")
+
+@bot.message_handler(commands=['cancel'], state=BotStates.deleting_user)
+async def cancel_activity_recording_message(message):
+    user = message.from_user
+    if not database.is_admin(user.id):
+        print(f"Non-admin user @{user.username} somehow did activate the deleting_user state")
+        return
+    await cancel_activity_recording(user.id)
+    await send_message_to_user(user.id, "Удаление отменено")
+
+@bot.message_handler(state=BotStates.deleting_user)
+async def delete_user_message(message):
+    user = message.from_user
+    try:
+        deleting_user_name = message.text if message.text[0] != '@' else message.text[1:]
+        database.execute_sql(delete_user_by_telegram_name(deleting_user_name))
+        send_message_to_user(user.id, f"Пользователь @{deleting_user_name} удален, если такой существовал")
+    except Exception as e:
+        send_message_to_user(user.id, f"Что-то пошло не так. {e}")
 
 @bot.message_handler(state=BotStates.recording_activity)
 async def recording_activity_iteration(message):
