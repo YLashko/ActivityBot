@@ -59,7 +59,7 @@ def get_user(telegram_id: str):
 def delete_user_by_telegram_name(name):
     return f'''
         DELETE from users
-        where users.telegram_nickname = {name}
+        where users.telegram_nickname = '{name}';
     '''
 
 def get_all_users():

@@ -4,7 +4,6 @@ from telebot.asyncio_storage import StateMemoryStorage
 from telebot import asyncio_filters
 from collections import defaultdict
 from activities import Activity
-from telebot.apihelper import ApiTelegramException
 import io
 import csv
 import asyncio
@@ -16,9 +15,9 @@ from queries import *
 
 bot = AsyncTeleBot(token=TOKEN, state_storage=StateMemoryStorage())
 
-class BotStates(StatesGroup):
-    recording_activity = State
-    deleting_user = State
+class ABotStates(StatesGroup):
+    recording_activity = 4
+    deleting_user = 3
 
 @bot.message_handler(commands=['start', 'help'])
 async def help(message):
@@ -40,7 +39,7 @@ async def delete_user(message):
     user = message.from_user
     if not database.is_admin(user.id):
         return
-    await bot.set_state(user.id, BotStates.deleting_user, user.id)
+    await bot.set_state(user.id, ABotStates.deleting_user)
     await send_message_to_user(user.id, "Выберите пользователя. Отмена - /cancel")
 
 @bot.message_handler(commands=['activity'])
@@ -58,34 +57,35 @@ async def activity_message(message):
     activity = Activity()
     await send_message_to_user(user.id, activity.next_title())
     users_activities[user.id] = activity
-    await bot.set_state(user.id, BotStates.recording_activity, message.chat.id)
+    await bot.set_state(user.id, ABotStates.recording_activity, message.chat.id)
 
-@bot.message_handler(commands=['cancel'], state=BotStates.recording_activity)
+@bot.message_handler(commands=['cancel'], state=ABotStates.recording_activity)
 async def cancel_activity_recording_message(message):
     user = message.from_user
     await cancel_activity_recording(user.id)
     await send_message_to_user(user.id, "Запись отменена")
 
-@bot.message_handler(commands=['cancel'], state=BotStates.deleting_user)
-async def cancel_activity_recording_message(message):
+@bot.message_handler(commands=['cancel'], state=ABotStates.deleting_user)
+async def cancel_deleting_user_message(message):
     user = message.from_user
     if not database.is_admin(user.id):
         print(f"Non-admin user @{user.username} somehow did activate the deleting_user state")
         return
-    await cancel_activity_recording(user.id)
+    await bot.delete_state(user.id)
     await send_message_to_user(user.id, "Удаление отменено")
 
-@bot.message_handler(state=BotStates.deleting_user)
+@bot.message_handler(state=ABotStates.deleting_user)
 async def delete_user_message(message):
     user = message.from_user
     try:
         deleting_user_name = message.text if message.text[0] != '@' else message.text[1:]
         database.execute_sql(delete_user_by_telegram_name(deleting_user_name))
-        send_message_to_user(user.id, f"Пользователь @{deleting_user_name} удален, если такой существовал")
+        await send_message_to_user(user.id, f"Пользователь @{deleting_user_name} удален, если такой существовал")
+        await bot.delete_state(user.id)
     except Exception as e:
-        send_message_to_user(user.id, f"Что-то пошло не так. {e}")
+        await send_message_to_user(user.id, f"Что-то пошло не так. {e}")
 
-@bot.message_handler(state=BotStates.recording_activity)
+@bot.message_handler(state=ABotStates.recording_activity)
 async def recording_activity_iteration(message):
 
     if not is_number(message.text):
@@ -131,17 +131,18 @@ async def send_messages_to_users():
     current_datetime = datetime.datetime.now()
     if not in_range(RECORD_TIME_RANGE[0], RECORD_TIME_RANGE[1], current_datetime.time()):
         return
-    
-    users = database.execute_sql(get_all_users())
+
     database.execute_sql(set_users_default_date())
+    users = database.execute_sql(get_all_users())
+    
     for user in users:
         if datetime.datetime.strptime(user[2], "%Y-%M-%d").date() < datetime.datetime.now().date():
-            await send_message_to_user(user[0])
+            await send_message_to_user(user[0], "Как прошел твой день? /activity")
     database.execute_sql(update_users_date_to_today())
 
-async def send_message_to_user(user_telegram_id, message, *args, **kwargs):
+async def send_message_to_user(user_telegram_id, message):
     try:
-        await bot.send_message(user_telegram_id, message, *args, **kwargs)
+        await bot.send_message(user_telegram_id, message)
     except Exception as e:
         print(f"Failed to send message to user {user_telegram_id}: {e}")
 
