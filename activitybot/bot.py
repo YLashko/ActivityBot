@@ -3,15 +3,16 @@ from telebot.handler_backends import State, StatesGroup
 from telebot.asyncio_storage import StateMemoryStorage
 from telebot import asyncio_filters
 from collections import defaultdict
-from activities import Activity
+from activitybot.activities import Activity
 import io
 import csv
 import asyncio
 import datetime
-from config import TOKEN, HELP_MESSAGE, MESSAGE_TIME, RECORD_TIME_RANGE
-from database import Database
-from filters import is_number
-from queries import *
+from activitybot.config import TOKEN, HELP_MESSAGE, RECORD_TIME_RANGE
+from activitybot.database import Database
+from activitybot.filters import is_number
+from activitybot.queries import *
+from activitybot.translations import Translations
 
 bot = AsyncTeleBot(token=TOKEN, state_storage=StateMemoryStorage())
 
@@ -19,12 +20,16 @@ class ABotStates(StatesGroup):
     recording_activity = 4
     deleting_user = 3
 
+def create_user_set_lang(user_id, username):
+    database.execute_sql(create_user(user_id, username))
+    translations.set_lang(user_id, 'ru')
+
 @bot.message_handler(commands=['start', 'help'])
 async def help(message):
     user = message.from_user
     if not database.user_exists(user.id):
-        database.execute_sql(create_user(user.id, user.username))
-    await send_message_to_user(user.id, HELP_MESSAGE)
+        create_user_set_lang(user.id, user.username)
+    await send_message_to_user(user.id, "start")
 
 @bot.message_handler(commands=['reset'])
 async def reset_tables_message(message):
@@ -32,7 +37,7 @@ async def reset_tables_message(message):
     if not database.is_admin(user.id):
         return
     database.execute_list(reset_tables())
-    await send_message_to_user(user.id, 'База данных очищена')
+    await send_message_to_user(user.id, "База данных очищена")
 
 @bot.message_handler(commands=['deleteuser'])
 async def delete_user(message):
@@ -42,6 +47,13 @@ async def delete_user(message):
     await bot.set_state(user.id, ABotStates.deleting_user)
     await send_message_to_user(user.id, "Выберите пользователя. Отмена - /cancel")
 
+@bot.message_handler(commands=['lang'])
+async def toggle_language(message):
+    user = message.from_user
+    lang = translations.toggle_language(user.id)
+    database.execute_sql(set_user_language(user.id, lang))
+    await send_message_to_user(user.id, "Язык изменён")
+
 @bot.message_handler(commands=['activity'])
 async def activity_message(message):
     user = message.from_user
@@ -49,7 +61,7 @@ async def activity_message(message):
     try:
         user_can_record_activity(user.id)
     except PermissionError as e:
-        await send_message_to_user(user.id, e)
+        await send_message_to_user(user.id, str(e))
         return
 
     await send_message_to_user(user.id, "Отменить запись активности - /cancel")
@@ -80,10 +92,10 @@ async def delete_user_message(message):
     try:
         deleting_user_name = message.text if message.text[0] != '@' else message.text[1:]
         database.execute_sql(delete_user_by_telegram_name(deleting_user_name))
-        await send_message_to_user(user.id, f"Пользователь @{deleting_user_name} удален, если такой существовал")
+        await send_message_to_user(user.id, f"Пользователь удален, если такой существовал", deleting_user_name)
         await bot.delete_state(user.id)
     except Exception as e:
-        await send_message_to_user(user.id, f"Что-то пошло не так. {e}")
+        await send_message_to_user(user.id, f"Что-то пошло не так.", e)
 
 @bot.message_handler(state=ABotStates.recording_activity)
 async def recording_activity_iteration(message):
@@ -140,9 +152,9 @@ async def send_messages_to_users():
             await send_message_to_user(user[0], "Как прошел твой день? /activity")
     database.execute_sql(update_users_date_to_today())
 
-async def send_message_to_user(user_telegram_id, message):
+async def send_message_to_user(user_telegram_id, message, *args, **kwargs):
     try:
-        await bot.send_message(user_telegram_id, message)
+        await bot.send_message(user_telegram_id, translations.t_id(user_telegram_id, message, *args, **kwargs))
     except Exception as e:
         print(f"Failed to send message to user {user_telegram_id}: {e}")
 
@@ -168,7 +180,7 @@ def user_can_record_activity(user_telegram_id):
 
     current_datetime = datetime.datetime.now()
     if not in_range(RECORD_TIME_RANGE[0], RECORD_TIME_RANGE[1], current_datetime.time()):
-        raise PermissionError('В данное вренмя нельзя сделать запись')
+        raise PermissionError('В данное время нельзя сделать запись')
     user_activities = database.execute_sql(get_user_activities(user_telegram_id))
 
     if len(user_activities) == 0:
@@ -177,6 +189,13 @@ def user_can_record_activity(user_telegram_id):
     last_activity = user_activities[-1]
     if last_activity[6][:10] == datetime.date.today().strftime('%Y-%m-%d'):
         raise PermissionError('Нельзя записать активность дважды в день')
+    
+def set_user_translations():
+    languages = {}
+    users = database.execute_sql(get_all_users())
+    for user in users:
+        languages[user[0]] = user[3]
+    translations.set_users_languages(languages)
 
 def in_range(start, end, i):
     return i >= start and i <= end
@@ -202,13 +221,15 @@ def run():
     global database
     global users_activities
     global running
+    global translations
     bot.add_custom_filter(asyncio_filters.StateFilter(bot))
     bot.add_custom_filter(asyncio_filters.IsDigitFilter())
-
     running = True
     users_activities = defaultdict(lambda: None)
-    database = Database('database.db')
+    database = Database('activitybot/database.db')
     database.connect()
+    translations = Translations()
+    set_user_translations()
     loop = asyncio.get_event_loop()
     loop.create_task(polling())
     loop.create_task(main_loop())

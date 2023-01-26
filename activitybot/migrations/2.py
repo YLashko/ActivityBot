@@ -1,4 +1,4 @@
-from database import Database
+from activitybot.database import Database
 
 def update_sql():
     return """
@@ -6,7 +6,7 @@ def update_sql():
     """
 
 def update():
-    db = Database('database.db')
+    db = Database('activitybot/database.db')
     db.connect()
     db.execute_sql(update_sql())
 

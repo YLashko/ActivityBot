@@ -1,6 +1,6 @@
 import sqlite3
-from queries import *
-from config import ADMINS
+from activitybot.queries import *
+from activitybot.config import ADMINS
 
 
 class Database:

@@ -10,7 +10,8 @@ def reset_tables():
     create table if not exists users (
         id integer primary key autoincrement,
         telegram_id text unique not null,
-        telegram_nickname unique not null 
+        telegram_nickname unique not null,
+        language text NOT NULL default 'ru'
     )
     ''',
     '''
@@ -64,8 +65,15 @@ def delete_user_by_telegram_name(name):
 
 def get_all_users():
     return '''
-        select users.telegram_id, users.telegram_nickname, users.sent_message_date
+        select users.telegram_id, users.telegram_nickname, users.sent_message_date, users.language
         from users
+    '''
+
+def set_user_language(user_telegram_id, language):
+    return f'''
+        update users
+        set language = '{language}'
+        where telegram_id = {user_telegram_id}
     '''
 
 def create_activity_record(user_telegram_id: str, activity_mark_absolute: int, activity_mark_relative: int, mood_mark_absolute: int, mood_mark_relative: int):
