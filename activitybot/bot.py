@@ -8,7 +8,7 @@ import io
 import csv
 import asyncio
 import datetime
-from activitybot.config import TOKEN, HELP_MESSAGE, RECORD_TIME_RANGE
+from activitybot.config import TOKEN, DB_PATH, RECORD_TIME_RANGE
 from activitybot.database import Database
 from activitybot.filters import is_number
 from activitybot.queries import *
@@ -22,7 +22,7 @@ class ABotStates(StatesGroup):
 
 def create_user_set_lang(user_id, username):
     database.execute_sql(create_user(user_id, username))
-    translations.set_lang(user_id, 'ru')
+    translations.set_lang(str(user_id), 'ru')
 
 @bot.message_handler(commands=['start', 'help'])
 async def help(message):
@@ -148,7 +148,7 @@ async def send_messages_to_users():
     users = database.execute_sql(get_all_users())
     
     for user in users:
-        if datetime.datetime.strptime(user[2], "%Y-%M-%d").date() < datetime.datetime.now().date():
+        if datetime.datetime.strptime(user[2], "%Y-%m-%d").date() < datetime.datetime.now().date():
             await send_message_to_user(user[0], "Как прошел твой день? /activity")
     database.execute_sql(update_users_date_to_today())
 
@@ -214,7 +214,11 @@ async def main_loop():
         await asyncio.sleep(1)
     
 async def polling():
-    await bot.polling()
+    try:
+        await bot.polling(non_stop=True)
+    except Exception as e:
+        print(f"Exception in polling: {e}")
+        await polling()
 
 
 def run():
@@ -222,14 +226,19 @@ def run():
     global users_activities
     global running
     global translations
+    global loop
     bot.add_custom_filter(asyncio_filters.StateFilter(bot))
     bot.add_custom_filter(asyncio_filters.IsDigitFilter())
     running = True
     users_activities = defaultdict(lambda: None)
-    database = Database('activitybot/database.db')
+    database = Database(DB_PATH)
     database.connect()
     translations = Translations()
-    set_user_translations()
+    try:
+        set_user_translations()
+    except:
+        database.execute_list(reset_tables())
+        set_user_translations()
     loop = asyncio.get_event_loop()
     loop.create_task(polling())
     loop.create_task(main_loop())

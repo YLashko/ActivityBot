@@ -10,8 +10,7 @@ def reset_tables():
     create table if not exists users (
         id integer primary key autoincrement,
         telegram_id text unique not null,
-        telegram_nickname unique not null,
-        language text NOT NULL default 'ru'
+        telegram_nickname unique not null
     )
     ''',
     '''
@@ -28,6 +27,12 @@ def reset_tables():
                 on update cascade
                 on delete cascade
     )    
+    ''',
+    '''
+    ALTER TABLE users ADD COLUMN sent_message_date date
+    ''',
+    '''
+    ALTER TABLE users ADD COLUMN language text NOT NULL default 'ru'
     ''']
 
 def create_user(telegram_id: str, telegram_nickname: str):
