@@ -8,7 +8,7 @@ import io
 import csv
 import asyncio
 import datetime
-from activitybot.config import TOKEN, DB_PATH, RECORD_TIME_RANGE
+from activitybot.config import TOKEN, DB_PATH, RECORD_TIME_RANGE, UPDATE_INTERVAL
 from activitybot.database import Database
 from activitybot.filters import is_number
 from activitybot.queries import *
@@ -46,6 +46,19 @@ async def delete_user(message):
         return
     await bot.set_state(user.id, ABotStates.deleting_user)
     await send_message_to_user(user.id, "Выберите пользователя. Отмена - /cancel")
+
+@bot.message_handler(commands=["sql"])
+async def execute_query(message):
+    user = message.from_user
+    if not database.is_admin(user.id):
+        return
+    command = message.split(" ")[1:]
+    command = " ".join(command)
+    try:
+        result = database.execute_sql(command)
+    except Exception as e:
+        await send_message_to_user(user.id, f"Error: {e}")
+    await send_message_to_user(user.id, result)
 
 @bot.message_handler(commands=['lang'])
 async def toggle_language(message):
@@ -210,15 +223,19 @@ async def stop(message):
 async def main_loop():
     global running
     while running:
-        await send_messages_to_users()
+        try:
+            await send_messages_to_users()
+        except Exception as e:
+            print(f"Exception in send_messages_to_users: {e}")
         await asyncio.sleep(1)
     
 async def polling():
-    try:
-        await bot.polling(non_stop=True)
-    except Exception as e:
-        print(f"Exception in polling: {e}")
-        await polling()
+    while True:
+        try:
+            await bot.polling(non_stop=True, interval=UPDATE_INTERVAL)
+        except Exception as e:
+            print(f"Exception in polling: {e}")
+            await polling()
 
 
 def run():
