@@ -52,7 +52,7 @@ async def execute_query(message):
     user = message.from_user
     if not database.is_admin(user.id):
         return
-    command = message.split(" ")[1:]
+    command = message.text.split(" ")[1:]
     command = " ".join(command)
     try:
         result = database.execute_sql(command)
