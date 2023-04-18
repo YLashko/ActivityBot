@@ -235,7 +235,6 @@ async def polling():
             await bot.polling(non_stop=True, interval=UPDATE_INTERVAL)
         except Exception as e:
             print(f"Exception in polling: {e}")
-            await polling()
 
 
 def run():
